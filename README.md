@@ -1,149 +1,70 @@
-HandshakeCrack
+ HandshakeCrack
 
-`HandshakeCrack` es una herramienta de fuerza bruta para probar combinaciones de contraseñas contra un archivo de handshake. Este proyecto está escrito en Java y utiliza un enfoque de fuerza bruta para encontrar la contraseña correcta.
+`HandshakeCrack` es una herramienta para probar combinaciones de contraseñas contra un archivo de handshake de red Wi-Fi. Utiliza el algoritmo PBKDF2 para generar la clave maestra (PMK) y el algoritmo HMAC-SHA1 para verificar el MIC.
 
- Características
+ Requisitos
 
-- Prueba combinaciones de contraseñas utilizando un conjunto de caracteres predefinido.
-- Registra solo la combinación correcta en un archivo de log.
-- Simula la autenticación de WPA/WPA2 utilizando un archivo de handshake.
+- Java 12 o superior
+- Biblioteca BouncyCastle
 
-Requisitos
+Instalación
 
-- Java 8 o superior
+1. Clonar el repositorio:
+
+   ```sh
+   git clone https://github.com/tu-usuario/HandshakeCrack.git
+   cd HandshakeCrack
+   ```
+
+2. Agregar la biblioteca BouncyCastle:
+
+   Descarga la biblioteca BouncyCastle desde [aquí](https://www.bouncycastle.org/latest_releases.html) y agrégala a tu proyecto.
+
+3. Compilar el proyecto:
+
+   ```sh
+   javac -cp "ruta/a/bouncycastle.jar" src/main/java/com/example/HandshakeCrack.java
+   ```
 
  Uso
 
-Para ejecutar `HandshakeCrack`, sigue estos pasos:
+1. Ejecutar el programa:
 
-1. Compila el código fuente:
+   ```sh
+   java -cp "ruta/a/bouncycastle.jar:src/main/java" com.example.HandshakeCrack <ruta_al_archivo_handshake>
+   ```
 
-    ```sh
-    javac -d bin src/com/example/HandshakeCrack.java
-    ```
+   Reemplaza `<ruta_al_archivo_handshake>` con la ruta al archivo de handshake que deseas probar.
 
-2. Ejecuta el programa con la ruta al archivo de handshake como argumento:
+2. Formato del archivo de handshake:
 
-    ```sh
-    java -cp bin com.example.HandshakeCrack <ruta_al_archivo_handshake>
-    ```
+   El archivo de handshake debe tener el siguiente formato:
 
-    Reemplaza `<ruta_al_archivo_handshake>` con la ruta real al archivo de handshake que deseas utilizar.
+   ```
+   SSID: nombre_de_la_red
+   AP_NONCE: valor_hexadecimal
+   CLIENT_NONCE: valor_hexadecimal
+   AP_MAC: valor_hexadecimal
+   CLIENT_MAC: valor_hexadecimal
+   MIC: valor_hexadecimal
+   EAPOL: valor_hexadecimal
+   ```
 
  Ejemplo
 
 ```sh
-java -cp bin com.example.HandshakeCrack /ruta/a/tu/archivo_handshake.cap
-```
-
- Código Fuente
-
-```java
-package com.example;
-
-import java.io.BufferedWriter;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
-public class HandshakeCrack {
-    private static final char[] CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:'\",.<>?/"
-            .toCharArray();
-    private static final String LOG_FILE = "password_attempts.log";
-    private static final Logger LOGGER = Logger.getLogger(HandshakeCrack.class.getName());
-
-    public static void main(String[] args) {
-        if (args.length != 1) {
-            System.out.println("Uso: java PasswordCracker <ruta_al_archivo_handshake>");
-            return;
-        }
-
-        String handshakeFilePath = args[0];
-        byte[] handshakeData;
-
-        try {
-            handshakeData = Files.readAllBytes(Paths.get(handshakeFilePath));
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Error al leer el archivo de handshake", e);
-            return;
-        }
-
-        int length = 8; // Longitud de la contraseña
-        char[] currentCombination = new char[length];
-        Arrays.fill(currentCombination, CHARACTERS[0]);
-
-        while (true) {
-            String combination = new String(currentCombination);
-            System.out.println("Probando combinación: " + combination);
-
-            // Probar la combinación contra el archivo de handshake
-            if (testHandshake(combination, handshakeData)) {
-                System.out.println("Contraseña encontrada: " + combination);
-
-                // Registrar la combinación correcta en el archivo de log
-                try (BufferedWriter logWriter = new BufferedWriter(new FileWriter(LOG_FILE, true))) {
-                    logWriter.write(combination);
-                    logWriter.newLine();
-                } catch (IOException e) {
-                    LOGGER.log(Level.SEVERE, "Error al escribir en el archivo de log", e);
-                }
-                break;
-            }
-
-            // Generar la siguiente combinación
-            if (!incrementCombination(currentCombination)) {
-                break;
-            }
-        }
-
-        System.out.println("Todas las combinaciones procesadas.");
-    }
-
-    private static boolean incrementCombination(char[] combination) {
-        int position = combination.length - 1;
-        while (position >= 0) {
-            if (combination[position] == CHARACTERS[CHARACTERS.length - 1]) {
-                combination[position] = CHARACTERS[0];
-                position--;
-            } else {
-                combination[position] = CHARACTERS[getIndex(combination[position]) + 1];
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static int getIndex(char c) {
-        for (int i = 0; i < CHARACTERS.length; i++) {
-            if (CHARACTERS[i] == c) {
-                return i;
-            }
-        }
-        return -1; // Nunca debería suceder
-    }
-
-    private static boolean testHandshake(String combination, byte[] handshakeData) {
-        // Aquí deberías implementar la lógica para probar la combinación contra el
-        // archivo de handshake
-        // Esto puede implicar el uso de bibliotecas de red y criptografía para
-        // autenticar WPA/WPA2
-        // Por ahora, simularemos la prueba con una contraseña correcta simulada
-        String correctPassword = "password"; // Simulación de la contraseña correcta
-        // Simulate using handshakeData in some way
-        return combination.equals(correctPassword) && handshakeData.length > 0;
-    }
-}
+java -cp "ruta/a/bouncycastle.jar:src/main/java" com.example.HandshakeCrack handshake.txt
 ```
 
  Contribuciones
 
-Las contribuciones son bienvenidas. Por favor, abre un issue o un pull request para discutir cualquier cambio que te gustaría hacer.
+Las contribuciones son bienvenidas. Por favor, abre un issue o envía un pull request.
 
  Licencia
 
 Este proyecto está licenciado bajo la Licencia MIT. Consulta el archivo [LICENSE](LICENSE) para más detalles.
+
+ Contacto
+
+Para cualquier pregunta o sugerencia, por favor contacta a [abraham_moyo@hotmail.com]
 ```
