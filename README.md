@@ -1,14 +1,14 @@
- HandshakeCrack
+HandshakeCrack
 
 `HandshakeCrack` es una herramienta de fuerza bruta para probar combinaciones de contraseñas contra un archivo de handshake. Este proyecto está escrito en Java y utiliza un enfoque de fuerza bruta para encontrar la contraseña correcta.
 
  Características
 
 - Prueba combinaciones de contraseñas utilizando un conjunto de caracteres predefinido.
-- Registra cada intento de combinación en un archivo de log.
+- Registra solo la combinación correcta en un archivo de log.
 - Simula la autenticación de WPA/WPA2 utilizando un archivo de handshake.
 
- Requisitos
+Requisitos
 
 - Java 8 o superior
 
@@ -76,32 +76,31 @@ public class HandshakeCrack {
         char[] currentCombination = new char[length];
         Arrays.fill(currentCombination, CHARACTERS[0]);
 
-        try (BufferedWriter logWriter = new BufferedWriter(new FileWriter(LOG_FILE, true))) {
-            while (true) {
-                String combination = new String(currentCombination);
-                System.out.println("Probando combinación: " + combination);
+        while (true) {
+            String combination = new String(currentCombination);
+            System.out.println("Probando combinación: " + combination);
 
-                // Registrar la combinación en el archivo de log
-                logWriter.write(combination);
-                logWriter.newLine();
-                logWriter.flush();
+            // Probar la combinación contra el archivo de handshake
+            if (testHandshake(combination, handshakeData)) {
+                System.out.println("Contraseña encontrada: " + combination);
 
-                // Probar la combinación contra el archivo de handshake
-                if (testHandshake(combination, handshakeData)) {
-                    System.out.println("Contraseña encontrada: " + combination);
-                    break;
+                // Registrar la combinación correcta en el archivo de log
+                try (BufferedWriter logWriter = new BufferedWriter(new FileWriter(LOG_FILE, true))) {
+                    logWriter.write(combination);
+                    logWriter.newLine();
+                } catch (IOException e) {
+                    LOGGER.log(Level.SEVERE, "Error al escribir en el archivo de log", e);
                 }
-
-                // Generar la siguiente combinación
-                if (!incrementCombination(currentCombination)) {
-                    break;
-                }
+                break;
             }
 
-            System.out.println("Todas las combinaciones procesadas.");
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Error al escribir en el archivo de log", e);
+            // Generar la siguiente combinación
+            if (!incrementCombination(currentCombination)) {
+                break;
+            }
         }
+
+        System.out.println("Todas las combinaciones procesadas.");
     }
 
     private static boolean incrementCombination(char[] combination) {
